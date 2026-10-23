@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OmniCare – Alexa+ MCP Simulator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f14;
+      color: #e4e4ec;
+      min-height: 100vh;
+      padding: 32px 16px;
+    }
+    .container { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 1.6rem; margin-bottom: 4px; }
+    .sub { color: #888; margin-bottom: 28px; font-size: 0.95rem; }
+    .card {
+      background: #1a1a24;
+      border: 1px solid #2a2a3a;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 6px; }
+    input, select, textarea {
+      width: 100%;
+      background: #12121a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #e4e4ec;
+      font-size: 0.95rem;
+      margin-bottom: 12px;
+    }
+    button {
+      background: #ff6b35;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+    button:hover { background: #e55a2b; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    pre {
+      background: #0d0d12;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 0.8rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .status { font-size: 0.85rem; margin-bottom: 12px; }
+    .status.ok { color: #2ecc71; }
+    .status.err { color: #e74c3c; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>OmniCare Alexa+ Simulator</h1>
+    <p class="sub">Acts as a real MCP client (Streamable HTTP) against the local OmniCare MCP server.</p>
+
+    <div class="card">
+      <div class="status" id="status">Not connected</div>
+      <label>MCP Server URL</label>
+      <input id="url" value="http://localhost:8000/mcp" />
+      <button onclick="initialize()">1. Initialize Session</button>
+      <button onclick="listTools()" style="margin-left:8px;background:#2a2a3a">2. List Tools</button>
+    </div>
+
+    <div class="card">
+      <label>Tool</label>
+      <select id="tool">
+        <option value="check_senior_status">check_senior_status</option>
+        <option value="evaluate_risk">evaluate_risk</option>
+        <option value="trigger_alert">trigger_alert</option>
+        <option value="notify_family">notify_family</option>
+        <option value="log_care_event">log_care_event</option>
+      </select>
+      <label>Arguments (JSON)</label>
+      <textarea id="args" rows="5">{
+  "senior_id": "mom-01"
+}</textarea>
+      <button onclick="callTool()">3. Call Tool</button>
+    </div>
+
+    <div class="card">
+      <label>Response</label>
+      <pre id="out">{}</pre>
+    </div>
+  </div>
+
+  <script>
+    let sessionId = null;
+
+    async function mcpRequest(method, params = {}) {
+      const url = document.getElementById("url").value;
+      const body = {
+        jsonrpc: "2.0",
+        id: Date.now(),
+        method,
+        params,
+      };
+      const headers = { "Content-Type": "application/json" };
+      if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      if (res.headers.get("Mcp-Session-Id")) {
+        sessionId = res.headers.get("Mcp-Session-Id");
+      }
+      return res.json();
+    }
+
+    async function initialize() {
+      const status = document.getElementById("status");
+      try {
+        const data = await mcpRequest("initialize", {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          clientInfo: { name: "omnicare-web-simulator", version: "1.0.0" },
+        });
+        status.textContent = "Connected · Protocol " + (data.result?.protocolVersion || "?");
+        status.className = "status ok";
+        document.getElementById("out").textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        status.textContent = "Error: " + e.message;
+        status.className = "status err";
+      }
+    }
+
+    async function listTools() {
+      try {
+        const data = await mcpRequest("tools/list");
+        document.getElementById("out").textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        document.getElementById("out").textContent = e.message;
+      }
+    }
+
+    async function callTool() {
+      const name = document.getElementById("tool").value;
+      let args = {};
+      try {
+        args = JSON.parse(document.getElementById("args").value);
+      } catch {
+        alert("Invalid JSON in arguments");
+        return;
+      }
+      try {
+        const data = await mcpRequest("tools/call", { name, arguments: args });
+        document.getElementById("out").textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        document.getElementById("out").textContent = e.message;
+      }
+    }
+  </script>
+</body>
+</html>
